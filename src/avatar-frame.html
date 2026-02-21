@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <style>
+      html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+      #echo-sign-wrap { position: relative; width: 324px; height: 250px; }
+      #echo-sign-canvas { display: block; width: 324px; height: 250px; border-radius: 10px; background: #0a0a14; }
+      #echo-sign-video  { display: none; position: absolute; top: 0; left: 0;
+                          width: 324px; height: 250px; border-radius: 10px;
+                          object-fit: contain; background: #0a0a14; }
+      #echo-sign-letter { position: absolute; top: 0; left: 0; width: 324px; height: 250px;
+                          pointer-events: none; border-radius: 10px;
+                          z-index: 10; will-change: transform; }
+    </style>
+  </head>
+  <body>
+    <div id="echo-sign-wrap">
+      <canvas id="echo-sign-canvas"></canvas>
+      <video  id="echo-sign-video" playsinline muted></video>
+      <canvas id="echo-sign-letter"></canvas>
+    </div>
+    <script src="./avatar-bundle.js"></script>
+  </body>
+</html>
