@@ -1,0 +1,380 @@
+// content.js — Injects and controls the Echo-Sign overlay on any webpage
+
+(function () {
+  if (window.__echoSignLoaded) return;
+  window.__echoSignLoaded = true;
+
+  let overlayEl = null;
+
+  // ─── Gloss map (inline — content scripts cannot import ES modules) ──────────
+  const GLOSS_MAP = {
+    "hello": "hello",       "hi": "hello",
+    "bye": "goodbye",       "goodbye": "goodbye",
+    "thanks": "thank_you",  "thank": "thank_you",
+    "welcome": "welcome",   "please": "please",   "sorry": "sorry",
+    "learn": "learn",       "study": "study",     "understand": "understand",
+    "know": "know",         "see": "see",         "read": "read",
+    "write": "write",       "listen": "listen",   "speak": "speak",
+    "ask": "ask",           "answer": "answer",   "help": "help",
+    "start": "start",       "stop": "stop",       "repeat": "repeat",
+    "explain": "explain",   "show": "show",       "open": "open",
+    "close": "close",
+    "student": "student",   "students": "student","teacher": "teacher",
+    "professor": "teacher", "school": "school",   "college": "college",
+    "university": "university", "class": "class", "lecture": "lecture",
+    "library": "library",   "book": "book",       "books": "book",
+    "exam": "exam",         "test": "test",       "question": "question",
+    "questions": "question","great": "clap",      "here": "point",
+    "computer": "computer", "algorithm": "algorithm", "data": "data",
+    "science": "science",   "math": "math",       "mathematics": "math",
+    "physics": "physics",   "chemistry": "chemistry", "biology": "biology",
+    "history": "history",   "english": "english", "language": "language",
+    "number": "number",     "numbers": "number",  "formula": "formula",
+    "yes": "yes",           "no": "no",           "maybe": "maybe",
+    "good": "good",         "bad": "bad",         "more": "more",
+    "less": "less",         "same": "same",       "different": "different",
+    "important": "important","easy": "easy",      "difficult": "difficult",
+    "hard": "difficult",    "fast": "fast",       "slow": "slow",
+    "big": "big",           "small": "small",     "new": "new",  "old": "old",
+    "today": "today",       "tomorrow": "tomorrow","yesterday": "yesterday",
+    "now": "now",           "later": "later",     "before": "before",
+    "after": "after",       "morning": "morning", "evening": "evening",
+    "night": "night",       "week": "week",       "month": "month",
+    "year": "year",
+    "one": "number_1",      "two": "number_2",    "three": "number_3",
+    "four": "number_4",     "five": "number_5",   "six": "number_6",
+    "seven": "number_7",    "eight": "number_8",  "nine": "number_9",
+    "ten": "number_10",
+  };
+
+  function wordToGloss(word) {
+    return GLOSS_MAP[word.toLowerCase().replace(/[^a-z0-9]/g, '')] || null;
+  }
+
+  // ─── Speech recognition (runs here so it inherits page mic access) ──────────
+  let recognition = null;
+  let isListening = false;
+
+  function startListening(lang) {
+    if (isListening) return;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      chrome.runtime.sendMessage({ type: 'STATUS_UPDATE', state: 'error', error: 'not-supported' }).catch(() => {});
+      return;
+    }
+
+    // In content script context, SpeechRecognition handles mic permission natively.
+    // No getUserMedia pre-call needed (that was only required in the popup context).
+    recognition = new SR();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = lang || 'en-IN';
+
+    recognition.onstart = () => {
+      isListening = true;
+      chrome.runtime.sendMessage({ type: 'STATUS_UPDATE', state: 'listening' }).catch(() => {});
+    };
+
+    recognition.onend = () => {
+      if (isListening) setTimeout(() => recognition?.start(), 300);
+    };
+
+    recognition.onerror = (e) => {
+      if (e.error !== 'no-speech') {
+        chrome.runtime.sendMessage({ type: 'STATUS_UPDATE', state: 'error', error: e.error }).catch(() => {});
+      }
+    };
+
+    recognition.onresult = (event) => {
+      let interimText = '';
+      let finalText = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const r = event.results[i];
+        if (r.isFinal) finalText += r[0].transcript + ' ';
+        else interimText += r[0].transcript;
+      }
+
+      if (finalText) {
+        chrome.runtime.sendMessage({ type: 'TRANSCRIPT_UPDATE', text: finalText.trim() }).catch(() => {});
+        finalText.toLowerCase()
+          .replace(/[^a-z0-9\s]/g, '')
+          .split(/\s+/)
+          .filter(w => w.length > 1)
+          .forEach(word => {
+            const gloss = wordToGloss(word);
+            if (gloss) {
+              // Play sign directly — no round-trip through background needed
+              window.dispatchEvent(new CustomEvent('echo-sign:play', { detail: { gloss } }));
+              chrome.runtime.sendMessage({ type: 'WORD_DETECTED', gloss }).catch(() => {});
+            }
+          });
+      } else if (interimText) {
+        chrome.runtime.sendMessage({ type: 'TRANSCRIPT_UPDATE', text: interimText.trim() }).catch(() => {});
+      }
+    };
+
+    recognition.start();
+  }
+
+  function stopListening() {
+    isListening = false;
+    recognition?.stop();
+    recognition = null;
+    setStatus('idle');
+    setCaption('');
+    setGloss(null);
+  }
+
+  // ─── Create the floating overlay ──────────────────────────────────────────
+  function createOverlay() {
+    if (overlayEl) return;
+
+    overlayEl = document.createElement('div');
+    overlayEl.id = 'echo-sign-overlay';
+    overlayEl.innerHTML = `
+      <div id="echo-sign-header">
+        <span>🤟 Echo-Sign</span>
+        <div id="echo-sign-controls">
+          <span id="echo-sign-status" class="status-dot idle"></span>
+          <button id="echo-sign-minimize">—</button>
+          <button id="echo-sign-close">✕</button>
+        </div>
+      </div>
+      <div id="echo-sign-body">
+        <canvas id="echo-sign-canvas"></canvas>
+        <div id="echo-sign-caption"></div>
+        <div id="echo-sign-gloss-bar">
+          <span id="echo-sign-current-gloss">Waiting...</span>
+        </div>
+      </div>
+    `;
+
+    // Inject styles
+    const style = document.createElement('style');
+    style.textContent = `
+      #echo-sign-overlay {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        width: 300px;
+        background: rgba(10, 10, 20, 0.92);
+        border: 1.5px solid #6C63FF;
+        border-radius: 16px;
+        box-shadow: 0 0 30px rgba(108, 99, 255, 0.4);
+        z-index: 2147483647;
+        font-family: 'Segoe UI', sans-serif;
+        color: white;
+        overflow: hidden;
+        resize: both;
+        min-width: 220px;
+        min-height: 280px;
+        transition: opacity 0.3s;
+        user-select: none;
+      }
+      #echo-sign-overlay.minimized #echo-sign-body {
+        display: none;
+      }
+      #echo-sign-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 12px;
+        background: rgba(108, 99, 255, 0.25);
+        cursor: grab;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+      }
+      #echo-sign-controls {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      #echo-sign-controls button {
+        background: none;
+        border: none;
+        color: #ccc;
+        cursor: pointer;
+        font-size: 13px;
+        padding: 2px 5px;
+        border-radius: 4px;
+        transition: background 0.2s;
+      }
+      #echo-sign-controls button:hover {
+        background: rgba(255,255,255,0.15);
+        color: white;
+      }
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+      .status-dot.idle { background: #888; }
+      .status-dot.listening { background: #4CAF50; animation: pulse 1.2s infinite; }
+      .status-dot.signing { background: #6C63FF; animation: pulse 0.8s infinite; }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
+      }
+      #echo-sign-body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 8px;
+      }
+      #echo-sign-canvas {
+        width: 284px;
+        height: 220px;
+        border-radius: 10px;
+        background: #0a0a14;
+      }
+      #echo-sign-caption {
+        font-size: 11px;
+        color: #aaa;
+        text-align: center;
+        padding: 4px 8px;
+        min-height: 18px;
+        width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #echo-sign-gloss-bar {
+        background: rgba(108, 99, 255, 0.2);
+        border-radius: 8px;
+        padding: 4px 12px;
+        font-size: 12px;
+        font-weight: 500;
+        color: #c8c4ff;
+        text-align: center;
+        width: calc(100% - 24px);
+        margin-bottom: 4px;
+        min-height: 22px;
+      }
+    `;
+    document.head.appendChild(style);
+    document.body.appendChild(overlayEl);
+
+    setupDrag();
+    setupButtons();
+    loadAvatarScript();
+  }
+
+  // ─── Drag to move ─────────────────────────────────────────────────────────
+  function setupDrag() {
+    const header = overlayEl.querySelector('#echo-sign-header');
+    let isDragging = false, startX, startY, origLeft, origBottom;
+
+    header.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      const rect = overlayEl.getBoundingClientRect();
+      origLeft = rect.left;
+      origBottom = window.innerHeight - rect.bottom;
+      header.style.cursor = 'grabbing';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      overlayEl.style.left = (origLeft + dx) + 'px';
+      overlayEl.style.right = 'auto';
+      overlayEl.style.bottom = (origBottom - dy) + 'px';
+    });
+
+    document.addEventListener('mouseup', () => {
+      isDragging = false;
+      header.style.cursor = 'grab';
+    });
+  }
+
+  // ─── Button actions ────────────────────────────────────────────────────────
+  function setupButtons() {
+    overlayEl.querySelector('#echo-sign-minimize').addEventListener('click', () => {
+      overlayEl.classList.toggle('minimized');
+    });
+    overlayEl.querySelector('#echo-sign-close').addEventListener('click', () => {
+      overlayEl.style.display = 'none';
+    });
+  }
+
+  // ─── Load the Three.js avatar script ─────────────────────────────────────
+  function loadAvatarScript() {
+    const script = document.createElement('script');
+    script.src = chrome.runtime.getURL('src/avatarContent.js');
+    script.type = 'module';
+    document.head.appendChild(script);
+  }
+
+  // ─── Update UI helpers ────────────────────────────────────────────────────
+  function setStatus(state) {
+    const dot = overlayEl?.querySelector('#echo-sign-status');
+    if (dot) {
+      dot.className = 'status-dot ' + state;
+    }
+  }
+
+  function setCaption(text) {
+    const el = overlayEl?.querySelector('#echo-sign-caption');
+    if (el) el.textContent = text;
+  }
+
+  function setGloss(gloss) {
+    const el = overlayEl?.querySelector('#echo-sign-current-gloss');
+    if (el) el.textContent = gloss ? `✋ ${gloss.replace(/_/g, ' ')}` : 'Waiting...';
+  }
+
+  // ─── Listen for messages from background / popup ──────────────────────────
+  chrome.runtime.onMessage.addListener((message) => {
+    switch (message.type) {
+      case 'TOGGLE_OVERLAY':
+        if (message.visible) {
+          createOverlay();
+          if (overlayEl) overlayEl.style.display = '';
+        } else {
+          if (overlayEl) overlayEl.style.display = 'none';
+        }
+        break;
+
+      case 'START_LISTENING':
+        createOverlay();
+        if (overlayEl) overlayEl.style.display = '';
+        startListening(message.lang);
+        break;
+
+      case 'STOP_LISTENING':
+        stopListening();
+        break;
+
+      case 'PROCESS_TRANSCRIPT':
+        // Arrives from offscreen (tab audio mode) — look up glosses and sign them
+        setCaption(message.text);
+        message.text.toLowerCase()
+          .replace(/[^a-z0-9\s]/g, '')
+          .split(/\s+/)
+          .filter(w => w.length > 1)
+          .forEach(word => {
+            const gloss = wordToGloss(word);
+            if (gloss) {
+              window.dispatchEvent(new CustomEvent('echo-sign:play', { detail: { gloss } }));
+              chrome.runtime.sendMessage({ type: 'WORD_DETECTED', gloss }).catch(() => {});
+            }
+          });
+        break;
+
+      case 'TRANSCRIPT_UPDATE':
+        setCaption(message.text);
+        break;
+
+      case 'STOP':
+        stopListening();
+        break;
+    }
+  });
+
+  // Auto-create overlay when content script loads
+  createOverlay();
+})();
