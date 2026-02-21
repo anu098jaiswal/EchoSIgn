@@ -54,6 +54,7 @@
   // ─── Speech recognition (runs here so it inherits page mic access) ──────────
   let recognition = null;
   let isListening = false;
+  let lastInterimGloss = null; // prevents the same sign firing repeatedly on interim updates
 
   function startListening(lang) {
     if (isListening) return;
@@ -95,6 +96,7 @@
       }
 
       if (finalText) {
+        lastInterimGloss = null; // reset dedup on finalized phrase
         chrome.runtime.sendMessage({ type: 'TRANSCRIPT_UPDATE', text: finalText.trim() }).catch(() => {});
         finalText.toLowerCase()
           .replace(/[^a-z0-9\s]/g, '')
@@ -103,13 +105,23 @@
           .forEach(word => {
             const gloss = wordToGloss(word);
             if (gloss) {
-              // Play sign directly — no round-trip through background needed
-              window.dispatchEvent(new CustomEvent('echo-sign:play', { detail: { gloss } }));
+              document.getElementById('echo-sign-iframe')?.contentWindow?.postMessage({ type: 'echo-sign:play', gloss }, '*');
               chrome.runtime.sendMessage({ type: 'WORD_DETECTED', gloss }).catch(() => {});
             }
           });
       } else if (interimText) {
         chrome.runtime.sendMessage({ type: 'TRANSCRIPT_UPDATE', text: interimText.trim() }).catch(() => {});
+        // Also trigger signs from interim — fires when recognition never finalises (e.g. background audio)
+        const words = interimText.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 1);
+        const lastWord = words[words.length - 1];
+        if (lastWord) {
+          const gloss = wordToGloss(lastWord);
+          if (gloss && gloss !== lastInterimGloss) {
+            lastInterimGloss = gloss;
+            document.getElementById('echo-sign-iframe')?.contentWindow?.postMessage({ type: 'echo-sign:play', gloss }, '*');
+            chrome.runtime.sendMessage({ type: 'WORD_DETECTED', gloss }).catch(() => {});
+          }
+        }
       }
     };
 
@@ -141,7 +153,7 @@
         </div>
       </div>
       <div id="echo-sign-body">
-        <canvas id="echo-sign-canvas"></canvas>
+        <div id="echo-sign-avatar-container"></div>
         <div id="echo-sign-caption"></div>
         <div id="echo-sign-gloss-bar">
           <span id="echo-sign-current-gloss">Waiting...</span>
@@ -301,12 +313,14 @@
     });
   }
 
-  // ─── Load the Three.js avatar script ─────────────────────────────────────
+  // ─── Load the Three.js avatar in an extension iframe (bypasses page CSP) ──
   function loadAvatarScript() {
-    const script = document.createElement('script');
-    script.src = chrome.runtime.getURL('src/avatarContent.js');
-    script.type = 'module';
-    document.head.appendChild(script);
+    const iframe = document.createElement('iframe');
+    iframe.id = 'echo-sign-iframe';
+    iframe.src = chrome.runtime.getURL('src/avatar-frame.html');
+    iframe.style.cssText = 'width:284px;height:220px;border:none;border-radius:10px;display:block;';
+    const container = overlayEl.querySelector('#echo-sign-avatar-container');
+    container.appendChild(iframe);
   }
 
   // ─── Update UI helpers ────────────────────────────────────────────────────
@@ -359,7 +373,7 @@
           .forEach(word => {
             const gloss = wordToGloss(word);
             if (gloss) {
-              window.dispatchEvent(new CustomEvent('echo-sign:play', { detail: { gloss } }));
+              document.getElementById('echo-sign-iframe')?.contentWindow?.postMessage({ type: 'echo-sign:play', gloss }, '*');
               chrome.runtime.sendMessage({ type: 'WORD_DETECTED', gloss }).catch(() => {});
             }
           });
