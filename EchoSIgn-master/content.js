@@ -18,6 +18,29 @@
     "acknowledge": "acknowledge", "ok": "acknowledge", "okay": "acknowledge",
     "think": "think", "hmm": "think",
 
+    // New single animations imported from device
+    "angry": "angry", "mad": "angry", "furious": "angry",
+    "dismiss": "dismissing_gesture", "ignore": "dismissing_gesture", "whatever": "dismissing_gesture",
+    "fall": "falling", "falling": "falling", "drop": "falling",
+    "stand": "female_standing_pose", "standing": "female_standing_pose", "wait": "female_standing_pose",
+    "ready": "offensive_idle", "impatient": "offensive_idle",
+    "open": "opening", "opening": "opening", "start": "opening",
+    "run": "running", "running": "running", "sprint": "running",
+    "dance": "samba_dancing", "dancing": "samba_dancing", "party": "samba_dancing",
+    "laugh": "sitting_laughing", "laughing": "sitting_laughing", "funny": "sitting_laughing", "haha": "sitting_laughing", "lol": "sitting_laughing",
+    "talk": "sitting_talking", "talking": "sitting_talking", "speak": "sitting_talking", "chat": "sitting_talking",
+    "spin": "spin_in_place", "turn": "spin_in_place", "round": "spin_in_place",
+    "walk": "standard_walk", "walking": "standard_walk", "stroll": "standard_walk",
+    "ovation": "standing_clap", "cheer": "standing_clap",
+    "surprise": "surprised", "surprised": "surprised", "shock": "surprised", "shocked": "surprised", "wow": "surprised",
+    "taunt": "taunt", "tease": "taunt", "mock": "taunt",
+    "secret": "telling_a_secret", "whisper": "telling_a_secret", "shh": "telling_a_secret",
+    "text": "texting_while_standing", "texting": "texting_while_standing", "message": "texting_while_standing", "phone": "texting_while_standing",
+    "thank": "thankful", "thanks": "thankful", "thankful": "thankful", "grateful": "thankful",
+    "doubt": "thoughtful_head_shake", "disbelieve": "thoughtful_head_shake",
+    "fax": "using_a_fax_machine", "print": "using_a_fax_machine",
+    "victory": "victory", "win": "victory", "won": "victory", "yay": "victory", "celebrate": "victory",
+
     // New 30+ words mapped to concept-breaking arrays of existing animations
     "agree": ["yes", "acknowledge"],
     "disagree": ["no", "think"],
@@ -94,6 +117,7 @@
     "project": ["think", "good", "point"]
   };
 
+
   function wordToGloss(word) {
     return GLOSS_MAP[word.toLowerCase().replace(/[^a-z0-9]/g, '')] || null;
   }
@@ -152,16 +176,18 @@
           .forEach(word => {
             const result = wordToGloss(word);
             if (result) {
+              // Send the full mapped word to UI
+              chrome.runtime.sendMessage({ type: 'WORD_DETECTED', gloss: word }).catch(() => { });
+
+              // Play animations
               const glosses = Array.isArray(result) ? result : [result];
               glosses.forEach(gloss => {
                 document.getElementById('echo-sign-iframe')?.contentWindow?.postMessage({ type: 'echo-sign:play', gloss }, '*');
-                chrome.runtime.sendMessage({ type: 'WORD_DETECTED', gloss }).catch(() => { });
               });
             }
           });
       } else if (interimText) {
         chrome.runtime.sendMessage({ type: 'TRANSCRIPT_UPDATE', text: interimText.trim() }).catch(() => { });
-        // Also trigger signs from interim — fires when recognition never finalises (e.g. background audio)
         const words = interimText.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 1);
         const lastWord = words[words.length - 1];
         if (lastWord) {
@@ -171,9 +197,12 @@
             const mainGloss = glosses[0];
             if (mainGloss !== lastInterimGloss) {
               lastInterimGloss = mainGloss;
+
+              // Send the full mapped word to UI
+              chrome.runtime.sendMessage({ type: 'WORD_DETECTED', gloss: lastWord }).catch(() => { });
+
               glosses.forEach(gloss => {
                 document.getElementById('echo-sign-iframe')?.contentWindow?.postMessage({ type: 'echo-sign:play', gloss }, '*');
-                chrome.runtime.sendMessage({ type: 'WORD_DETECTED', gloss }).catch(() => { });
               });
             }
           }
@@ -429,10 +458,11 @@
           .forEach(word => {
             const result = wordToGloss(word);
             if (result) {
+              chrome.runtime.sendMessage({ type: 'WORD_DETECTED', gloss: word }).catch(() => { });
+
               const glosses = Array.isArray(result) ? result : [result];
               glosses.forEach(gloss => {
                 document.getElementById('echo-sign-iframe')?.contentWindow?.postMessage({ type: 'echo-sign:play', gloss }, '*');
-                chrome.runtime.sendMessage({ type: 'WORD_DETECTED', gloss }).catch(() => { });
               });
             }
           });
