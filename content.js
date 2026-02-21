@@ -7,48 +7,71 @@
   let overlayEl = null;
 
   // ─── Gloss map (inline — content scripts cannot import ES modules) ──────────
+  // Each key is an English word; value is the ASL gloss name.
+  // Gloss name must match a loadAnim() call in avatarContent-src.js.
+  // Words not found here are fingerspelled letter-by-letter (SPELL: path).
+  // MVP GLOSS_MAP — 7 signs (4 GLB + 3 MP4)
+  // Demo sentence: "Hello! I think you are good. Please help. Do you understand? Thank you. Goodbye."
+  // Unknown words fall through to fingerspelling automatically.
   const GLOSS_MAP = {
-    "hello": "hello",       "hi": "hello",
-    "bye": "goodbye",       "goodbye": "goodbye",
-    "thanks": "thank_you",  "thank": "thank_you",
-    "welcome": "welcome",   "please": "please",   "sorry": "sorry",
-    "learn": "learn",       "study": "study",     "understand": "understand",
-    "know": "know",         "see": "see",         "read": "read",
-    "write": "write",       "listen": "listen",   "speak": "speak",
-    "ask": "ask",           "answer": "answer",   "help": "help",
-    "start": "start",       "stop": "stop",       "repeat": "repeat",
-    "explain": "explain",   "show": "show",       "open": "open",
-    "close": "close",
-    "student": "student",   "students": "student","teacher": "teacher",
-    "professor": "teacher", "school": "school",   "college": "college",
-    "university": "university", "class": "class", "lecture": "lecture",
-    "library": "library",   "book": "book",       "books": "book",
-    "exam": "exam",         "test": "test",       "question": "question",
-    "questions": "question","great": "clap",      "here": "point",
-    "computer": "computer", "algorithm": "algorithm", "data": "data",
-    "science": "science",   "math": "math",       "mathematics": "math",
-    "physics": "physics",   "chemistry": "chemistry", "biology": "biology",
-    "history": "history",   "english": "english", "language": "language",
-    "number": "number",     "numbers": "number",  "formula": "formula",
-    "yes": "yes",           "no": "no",           "maybe": "maybe",
-    "good": "good",         "bad": "bad",         "more": "more",
-    "less": "less",         "same": "same",       "different": "different",
-    "important": "important","easy": "easy",      "difficult": "difficult",
-    "hard": "difficult",    "fast": "fast",       "slow": "slow",
-    "big": "big",           "small": "small",     "new": "new",  "old": "old",
-    "today": "today",       "tomorrow": "tomorrow","yesterday": "yesterday",
-    "now": "now",           "later": "later",     "before": "before",
-    "after": "after",       "morning": "morning", "evening": "evening",
-    "night": "night",       "week": "week",       "month": "month",
-    "year": "year",
-    "one": "number_1",      "two": "number_2",    "three": "number_3",
-    "four": "number_4",     "five": "number_5",   "six": "number_6",
-    "seven": "number_7",    "eight": "number_8",  "nine": "number_9",
-    "ten": "number_10",
+
+    // ══ HELLO (GLB) ══
+    "hello": "HELLO", "hi": "HELLO", "hey": "HELLO",
+    "greet": "HELLO", "greetings": "HELLO", "howdy": "HELLO", "welcome": "HELLO",
+
+    // ══ THINK (GLB) ══
+    "think": "THINK", "wonder": "THINK", "consider": "THINK",
+    "maybe": "THINK", "idea": "THINK", "believe": "THINK", "opinion": "THINK",
+
+    // ══ GOOD (GLB) ══
+    "good": "GOOD", "nice": "GOOD", "happy": "GOOD",
+    "well": "GOOD", "fine": "GOOD",
+
+    // ══ UNDERSTAND (GLB) ══
+    "understand": "UNDERSTAND", "understood": "UNDERSTAND",
+    "got": "UNDERSTAND", "alright": "UNDERSTAND", "noted": "UNDERSTAND",
+
+    // ══ HELP (MP4 — assets/videos/help.mp4) ══
+    "help": "HELP", "support": "HELP", "assist": "HELP",
+    "fix": "HELP", "rescue": "HELP",
+
+    // ══ THANK-YOU (MP4 — assets/videos/thank_you.mp4) ══
+    "thanks": "THANK-YOU", "thank": "THANK-YOU", "grateful": "THANK-YOU",
+    "appreciate": "THANK-YOU", "thankyou": "THANK-YOU",
+
+    // ══ GOODBYE (MP4 — assets/videos/goodbye.mp4) ══
+    "bye": "GOODBYE", "goodbye": "GOODBYE", "farewell": "GOODBYE", "later": "GOODBYE",
+
+    // ══ POINT (GLB — for demo: "deaf people") ══
+    "deaf": "POINT", "people": "POINT",
   };
 
+  // Deduplicate: if a word maps to a gloss that has a duplicate key, last one wins (JS default)
+
   function wordToGloss(word) {
-    return GLOSS_MAP[word.toLowerCase().replace(/[^a-z0-9]/g, '')] || null;
+    const clean = word.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (GLOSS_MAP[clean]) return GLOSS_MAP[clean];
+    // Unknown word → fingerspell it (min 3 chars to skip noise)
+    if (clean.length >= 3) return 'SPELL:' + clean;
+    return null;
+  }
+
+  // ─── Dispatch a gloss (or fingerspell an unknown word) to the iframe ─────
+  function dispatchGloss(gloss) {
+    const iframe = document.getElementById('echo-sign-iframe');
+    if (!iframe?.contentWindow) return;
+    if (gloss.startsWith('SPELL:')) {
+      const letters = gloss.slice(6).split('');
+      letters.forEach((letter, i) => {
+        setTimeout(() => {
+          iframe.contentWindow.postMessage({ type: 'echo-sign:letter', letter }, '*');
+        }, i * 450); // stagger each letter by 450ms
+      });
+      setGloss('spell: ' + gloss.slice(6));
+    } else {
+      iframe.contentWindow.postMessage({ type: 'echo-sign:play', gloss }, '*');
+      setGloss(gloss);
+    }
   }
 
   // ─── Speech recognition (runs here so it inherits page mic access) ──────────
@@ -69,7 +92,7 @@
     recognition = new SR();
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = lang || 'en-IN';
+    recognition.lang = lang || 'en-US';
 
     recognition.onstart = () => {
       isListening = true;
@@ -105,7 +128,7 @@
           .forEach(word => {
             const gloss = wordToGloss(word);
             if (gloss) {
-              document.getElementById('echo-sign-iframe')?.contentWindow?.postMessage({ type: 'echo-sign:play', gloss }, '*');
+              dispatchGloss(gloss);
               chrome.runtime.sendMessage({ type: 'WORD_DETECTED', gloss }).catch(() => {});
             }
           });
@@ -118,7 +141,7 @@
           const gloss = wordToGloss(lastWord);
           if (gloss && gloss !== lastInterimGloss) {
             lastInterimGloss = gloss;
-            document.getElementById('echo-sign-iframe')?.contentWindow?.postMessage({ type: 'echo-sign:play', gloss }, '*');
+            dispatchGloss(gloss);
             chrome.runtime.sendMessage({ type: 'WORD_DETECTED', gloss }).catch(() => {});
           }
         }
@@ -145,7 +168,7 @@
     overlayEl.id = 'echo-sign-overlay';
     overlayEl.innerHTML = `
       <div id="echo-sign-header">
-        <span>🤟 Echo-Sign</span>
+        <span>🤟 Echo-Sign ASL</span>
         <div id="echo-sign-controls">
           <span id="echo-sign-status" class="status-dot idle"></span>
           <button id="echo-sign-minimize">—</button>
@@ -158,6 +181,7 @@
         <div id="echo-sign-gloss-bar">
           <span id="echo-sign-current-gloss">Waiting...</span>
         </div>
+        <div id="echo-sign-history"></div>
       </div>
     `;
 
@@ -168,7 +192,7 @@
         position: fixed;
         bottom: 24px;
         right: 24px;
-        width: 300px;
+        width: 340px;
         background: rgba(10, 10, 20, 0.92);
         border: 1.5px solid #6C63FF;
         border-radius: 16px;
@@ -178,8 +202,8 @@
         color: white;
         overflow: hidden;
         resize: both;
-        min-width: 220px;
-        min-height: 280px;
+        min-width: 260px;
+        min-height: 320px;
         transition: opacity 0.3s;
         user-select: none;
       }
@@ -264,6 +288,22 @@
         margin-bottom: 4px;
         min-height: 22px;
       }
+      #echo-sign-history {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+        padding: 0 8px 6px;
+        justify-content: center;
+        min-height: 20px;
+      }
+      .es-h-chip {
+        background: rgba(108, 99, 255, 0.12);
+        border: 1px solid rgba(108, 99, 255, 0.25);
+        border-radius: 6px;
+        padding: 2px 8px;
+        font-size: 10px;
+        color: #9990ff;
+      }
     `;
     document.head.appendChild(style);
     document.body.appendChild(overlayEl);
@@ -318,7 +358,7 @@
     const iframe = document.createElement('iframe');
     iframe.id = 'echo-sign-iframe';
     iframe.src = chrome.runtime.getURL('src/avatar-frame.html');
-    iframe.style.cssText = 'width:284px;height:220px;border:none;border-radius:10px;display:block;';
+    iframe.style.cssText = 'width:324px;height:250px;border:none;border-radius:10px;display:block;';
     const container = overlayEl.querySelector('#echo-sign-avatar-container');
     container.appendChild(iframe);
   }
@@ -336,9 +376,20 @@
     if (el) el.textContent = text;
   }
 
+  const historyGlosses = [];
   function setGloss(gloss) {
     const el = overlayEl?.querySelector('#echo-sign-current-gloss');
     if (el) el.textContent = gloss ? `✋ ${gloss.replace(/_/g, ' ')}` : 'Waiting...';
+    if (gloss) {
+      historyGlosses.push(gloss);
+      if (historyGlosses.length > 4) historyGlosses.shift();
+      const hist = overlayEl?.querySelector('#echo-sign-history');
+      if (hist) {
+        hist.innerHTML = historyGlosses.map(g =>
+          `<span class="es-h-chip">${g.replace(/_/g, ' ')}</span>`
+        ).join('');
+      }
+    }
   }
 
   // ─── Listen for messages from background / popup ──────────────────────────
@@ -373,7 +424,7 @@
           .forEach(word => {
             const gloss = wordToGloss(word);
             if (gloss) {
-              document.getElementById('echo-sign-iframe')?.contentWindow?.postMessage({ type: 'echo-sign:play', gloss }, '*');
+              dispatchGloss(gloss);
               chrome.runtime.sendMessage({ type: 'WORD_DETECTED', gloss }).catch(() => {});
             }
           });

@@ -17,8 +17,8 @@ function waitForCanvas(cb) {
 }
 
 waitForCanvas((canvas) => {
-  const W = canvas.clientWidth  || 284;
-  const H = canvas.clientHeight || 220;
+  const W = 324;
+  const H = 250;
 
   /* ── Scene ── */
   const scene    = new THREE.Scene();
@@ -77,7 +77,9 @@ waitForCanvas((canvas) => {
     const loader = new GLTFLoader();
     loader.load(url, (gltf) => {
       if (!mixer || !gltf.animations.length) return;
-      const action = mixer.clipAction(gltf.animations[0]);
+      // Bind the clip to the scene root so bone names resolve against Kaya's skeleton
+      const clip = gltf.animations[0];
+      const action = mixer.clipAction(clip, mixer.getRoot());
       action.loop = THREE.LoopOnce;
       action.clampWhenFinished = true;
       actions[glossName] = action;
@@ -86,8 +88,36 @@ waitForCanvas((canvas) => {
   }
 
   /* ── Load avatar GLB ── */
-  const ANIM_BASE = chrome.runtime.getURL('assets/animations/');
+  const ANIM_BASE  = chrome.runtime.getURL('assets/animations/');
+  const ALPHA_BASE = chrome.runtime.getURL('assets/alphabet/');
+  const VIDEO_BASE = chrome.runtime.getURL('assets/videos/');
+  const videoEl    = document.getElementById('echo-sign-video');
   const loader = new GLTFLoader();
+
+  /* ── Canvas/video switcher ── */
+  function showCanvas() {
+    canvas.style.display = 'block';
+    if (videoEl) { videoEl.pause(); videoEl.style.display = 'none'; }
+  }
+
+  function tryPlayVideo(gloss, onDone) {
+    if (!videoEl) { onDone(); return; }
+    videoEl.oncanplay = null;
+    videoEl.onended   = null;
+    videoEl.onerror   = null;
+    videoEl.src = VIDEO_BASE + gloss.toLowerCase().replace(/-/g, '_') + '.mp4';
+    videoEl.load();
+    videoEl.oncanplay = () => {
+      canvas.style.display = 'none';
+      videoEl.style.display = 'block';
+      videoEl.play();
+    };
+    videoEl.onended = () => { showCanvas(); onDone(); };
+    videoEl.onerror = () => {
+      console.log('[Echo-Sign] No video for:', gloss, '— skipping');
+      onDone();
+    };
+  }
 
   loader.load(
     ANIM_BASE + 'hello.glb',
@@ -96,14 +126,16 @@ waitForCanvas((canvas) => {
       scene.add(gltf.scene);
       mixer = new THREE.AnimationMixer(gltf.scene);
 
-      loadAnim('hello',       ANIM_BASE + 'hello.glb');
-      loadAnim('clap',        ANIM_BASE + 'clap.glb');
-      loadAnim('point',       ANIM_BASE + 'point.glb');
-      loadAnim('yes',         ANIM_BASE + 'yes.glb');
-      loadAnim('no',          ANIM_BASE + 'no.glb');
-      loadAnim('good',        ANIM_BASE + 'good.glb');
-      loadAnim('acknowledge', ANIM_BASE + 'acknowledge.glb');
-      loadAnim('think',       ANIM_BASE + 'think.glb');
+      // ── MVP GLBs (8 existing files) ──
+      // NEED, HELP, THANK-YOU, GOODBYE → served via ISL video clips in assets/videos/
+      loadAnim('HELLO',      ANIM_BASE + 'hello.glb');
+      loadAnim('YES',        ANIM_BASE + 'yes.glb');
+      loadAnim('NO',         ANIM_BASE + 'no.glb');
+      loadAnim('GOOD',       ANIM_BASE + 'good.glb');
+      loadAnim('THINK',      ANIM_BASE + 'think.glb');
+      loadAnim('POINT',      ANIM_BASE + 'point.glb');
+      loadAnim('CLAP',       ANIM_BASE + 'clap.glb');
+      loadAnim('UNDERSTAND', ANIM_BASE + 'acknowledge.glb');
 
       console.log('[Echo-Sign] Kaya avatar loaded!');
     },
@@ -123,25 +155,63 @@ waitForCanvas((canvas) => {
       action.reset().play();
       setTimeout(playNext, action.getClip().duration * 1000 + 300);
     } else {
-      // Placeholder arm wave when GLB anim not loaded yet
-      const arm = placeholder.children[3];
-      if (arm) {
-        let t = 0;
-        const iv = setInterval(() => {
-          t += 0.3;
-          arm.rotation.z = -0.4 + Math.sin(t * 3) * 0.6;
-          if (t > 2.5) { arm.rotation.z = -0.4; clearInterval(iv); }
-        }, 30);
-      }
-      setTimeout(playNext, 900);
+      // No GLB — try ISL video clip, then skip if none found
+      tryPlayVideo(gloss, () => setTimeout(playNext, 600));
     }
   }
 
-  /* ── Listen for gloss messages from content.js ── */
+  /* ── Fingerspelling overlay (2D canvas on top of WebGL) ── */
+  const letterCanvas = document.getElementById('echo-sign-letter');
+  let letterCtx = null;
+  if (letterCanvas) {
+    letterCanvas.width  = W;
+    letterCanvas.height = H;
+    letterCtx = letterCanvas.getContext('2d');
+  }
+
+  function showLetter(letter) {
+    if (!letterCtx) return;
+    letterCtx.clearRect(0, 0, W, H);
+    const size = 80;
+    const bx = W - size - 10, by = H - size - 10; // top-left of the box
+
+    const drawBubble = () => {
+      letterCtx.fillStyle = 'rgba(26,26,58,0.88)';
+      letterCtx.strokeStyle = '#6C63FF';
+      letterCtx.lineWidth = 2;
+      letterCtx.beginPath();
+      letterCtx.roundRect(bx - 6, by - 6, size + 12, size + 12, 12);
+      letterCtx.fill();
+      letterCtx.stroke();
+    };
+
+    const img = new Image();
+    img.onload = () => {
+      drawBubble();
+      letterCtx.drawImage(img, bx, by, size, size);
+      setTimeout(() => letterCtx && letterCtx.clearRect(0, 0, W, H), 700);
+    };
+    img.onerror = () => {
+      // Fallback: text bubble when handshape PNG not found
+      drawBubble();
+      letterCtx.fillStyle = '#c8c4ff';
+      letterCtx.font = 'bold 42px monospace';
+      letterCtx.textAlign = 'center';
+      letterCtx.textBaseline = 'middle';
+      letterCtx.fillText(letter.toUpperCase(), bx + size / 2, by + size / 2);
+      setTimeout(() => letterCtx && letterCtx.clearRect(0, 0, W, H), 700);
+    };
+    img.src = ALPHA_BASE + letter.toLowerCase() + '.png';
+  }
+
+  /* ── Listen for gloss + letter messages from content.js ── */
   window.addEventListener('message', (e) => {
-    if (e.data?.type !== 'echo-sign:play') return;
-    queue.push(e.data.gloss);
-    if (!playing) playNext();
+    if (e.data?.type === 'echo-sign:play') {
+      queue.push(e.data.gloss);
+      if (!playing) playNext();
+    } else if (e.data?.type === 'echo-sign:letter') {
+      showLetter(e.data.letter);
+    }
   });
 
   /* ── Render loop ── */
