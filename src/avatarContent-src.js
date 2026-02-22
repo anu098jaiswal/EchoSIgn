@@ -194,17 +194,24 @@ waitForCanvas((canvas) => {
 
     const onFinished = () => {
       window.parent.postMessage({ type: 'echo-sign:gloss-finished', gloss }, '*');
-      setTimeout(playNext, 300);
+      setTimeout(playNext, 100);
     };
 
     if (actions[gloss]) {
       Object.values(actions).forEach(a => a.stop());
       const action = actions[gloss];
       action.reset();
-      action.timeScale = speedFactor;
+      
+      const clipDur = action.getClip().duration;
+      // Demo optimization: speed up long animations to keep it snappy
+      let ts = speedFactor;
+      if (window.__isDemoToken && clipDur > 2.0) {
+        ts *= 1.5;
+      }
+      action.timeScale = ts;
+      
       action.play();
-      const dur = action.getClip().duration / speedFactor;
-      setTimeout(onFinished, dur * 1000);
+      setTimeout(onFinished, (clipDur / ts) * 1000);
     } else {
       // No GLB — try ISL video clip, then skip if none found
       tryPlayVideo(gloss, onFinished);
@@ -264,6 +271,7 @@ waitForCanvas((canvas) => {
   window.addEventListener('message', (e) => {
     if (e.data?.type === 'echo-sign:play') {
       if (e.data.speed !== undefined) speedFactor = e.data.speed;
+      window.__isDemoToken = !!e.data.demo; // Set demo flag for animation logic
       // Only clear backlog for live speech, NOT for demo tokens
       if (!e.data.demo && queue.length > 1) queue.length = 0;
       queue.push(e.data.gloss);

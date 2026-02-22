@@ -15,67 +15,54 @@
     {
       caption: '👋 Hello! Welcome to Echo-Sign.',
       tokens: ['hello', 'hello'],
-      tokenMs: [2200, 2000],
     },
     {
       caption: '✋ I can sign YES and NO.',
       tokens: ['yes', 'no'],
-      tokenMs: [1600, 1800],
     },
     {
       caption: '🤔 Thinking... Got a good idea!',
       tokens: ['think', 'good'],
-      tokenMs: [2000, 1600],
     },
     {
       caption: '👏 Great job — let\'s clap for that!',
       tokens: ['clap', 'clap', 'victory'],
-      tokenMs: [2000, 2000, 2800],
     },
     {
       caption: '😮 Wow, that\'s surprising!',
       tokens: ['surprised', 'acknowledge'],
-      tokenMs: [2200, 1800],
     },
     {
       caption: '💬 Let me explain the topic.',
-      tokens: ['sitting_talking', 'point', 'think'],
-      tokenMs: [2500, 1600, 2000],
+      tokens: ['sitting_talking', 'point'],
     },
     {
       caption: '🎓 Study hard and learn every day.',
       tokens: ['think', 'acknowledge', 'think', 'good'],
-      tokenMs: [2000, 1800, 2000, 1600],
     },
     {
       caption: '🔤 Fingerspelling: E-C-H-O',
       tokens: ['SPELL:echo'],
-      tokenMs: [3500],
     },
     {
       caption: '🔤 Name sign: S-I-G-N',
       tokens: ['SPELL:sign'],
-      tokenMs: [3200],
     },
     {
       caption: '😄 Don\'t give up — keep going!',
       tokens: ['no', 'dismissing_gesture', 'yes', 'good'],
-      tokenMs: [1600, 2200, 1600, 1600],
     },
     {
       caption: '🙏 Thankful for your attention!',
       tokens: ['thankful', 'point', 'acknowledge'],
-      tokenMs: [2200, 1600, 1800],
     },
     {
       caption: '💃 Echo-Sign — making communication fun!',
       tokens: ['samba_dancing', 'victory', 'clap'],
-      tokenMs: [4500, 2800, 2200],
     },
     {
       caption: '👋 Goodbye — see you next time!',
       tokens: ['hello', 'acknowledge', 'hello'],
-      tokenMs: [2200, 1800, 2200],
     },
   ];
 
@@ -124,7 +111,7 @@
       demoTokenIdx = 0;
       demoSceneIdx++;
       // Scene break
-      demoTimer = setTimeout(playNextDemoToken, 1000);
+      demoTimer = setTimeout(playNextDemoToken, 400);
       return;
     }
 
