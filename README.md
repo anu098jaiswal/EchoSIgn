@@ -6,9 +6,9 @@
 
 ## 📺 Demo Video DRIVE LINK
 
-
-![Echo-Sign Preview](assets/clarra.png)
-![Echo-Sign Preview](assets/kaya.png)
+<img src="assets/clarra_avatar.png" width="300"/>
+<img src="assets/clarra.png" width="300"/>
+<img src="assets/kaya.png" width="300"/>
 
 https://drive.google.com/file/d/12yBv0TOKdDxfsf1MJxKD4Vobe9mehhW5/view?usp=sharing
 
@@ -45,6 +45,9 @@ Traditional education and tech-tools are rarely designed with a **Deaf-First** m
 ---
 
 ## 🏗️ Technical Architecture
+
+
+![Echo-Sign Preview](assets/architecture_mvp.jpeg)
 
 ### Data Flow
 ```mermaid
