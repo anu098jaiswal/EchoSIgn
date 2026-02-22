@@ -4,9 +4,10 @@
 
 ---
 
-## 📺 Demo Video DRIVE LINK
+## 📺 Demo Video
+[![Echo-Sign Demo](image.png)](https://drive.google.com/file/d/12yBv0TOKdDxfsf1MJxKD4Vobe9mehhW5/view?usp=sharing)
 
-https://drive.google.com/file/d/12yBv0TOKdDxfsf1MJxKD4Vobe9mehhW5/view?usp=sharing
+[Click here to watch the full Demo Video on Google Drive](https://drive.google.com/file/d/12yBv0TOKdDxfsf1MJxKD4Vobe9mehhW5/view?usp=sharing)
 
 ---
 
