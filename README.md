@@ -4,6 +4,11 @@
 
 ---
 
+## 📺 Demo Video
+[Click here to watch the Demo Video](PASTE_YOUR_VIDEO_URL_HERE)
+
+---
+
 ## ⚡ Problem Statement
 Deaf and hard-of-hearing students face significant barriers in understanding live lectures, online classes, and educational videos because most learning environments rely heavily on spoken communication.
 
