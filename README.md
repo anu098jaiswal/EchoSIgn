@@ -24,6 +24,12 @@ There is currently no real-time, scalable solution that converts live lecture au
 - **Fingerspelling Fallback**: For technical terms not in the dictionary, the avatar performs ISL handshape fingerspelling.
 - **Intervention-Free Demo**: A curated walkthrough depicting common educational scenarios.
 
+## 🌟 Why it Matters (The "Deaf-First" Approach)
+Traditional education and tech-tools are rarely designed with a **Deaf-First** mindset. Echo-Sign isn't just about transcription; it's about **representation**. 
+- **Visual-First Learning**: For many, sign language is the primary language, not just a translation tool.
+- **Empowerment**: By providing a 3D interpreter, we give deaf students the autonomy to learn in their natural language.
+- **Inclusion**: Breaking the isolation of spoken lectures by integrating a visual bridge directly into the browser.
+
 ---
 
 ## 🏗️ Technical Architecture
