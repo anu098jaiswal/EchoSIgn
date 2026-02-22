@@ -6,7 +6,7 @@
 
 let captureMode = 'mic'; // 'mic' | 'tab'
 
-const TO_CONTENT = ['TOGGLE_OVERLAY', 'START_LISTENING', 'STOP_LISTENING', 'PLAY_SIGN', 'STOP'];
+const TO_CONTENT = ['TOGGLE_OVERLAY', 'START_LISTENING', 'STOP_LISTENING', 'PLAY_SIGN', 'STOP', 'SET_SPEED', 'SET_AVATAR', 'START_DEMO', 'STOP_DEMO'];
 const TO_POPUP   = ['STATUS_UPDATE', 'WORD_DETECTED', 'TRANSCRIPT_UPDATE'];
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

@@ -5,54 +5,335 @@
   window.__echoSignLoaded = true;
 
   let overlayEl = null;
+  let currentSpeed = 1.0;
+  let demoTimer = null;
 
-  // ─── Gloss map (inline — content scripts cannot import ES modules) ──────────
-  // Each key is an English word; value is the ASL gloss name.
-  // Gloss name must match a loadAnim() call in avatarContent-src.js.
-  // Words not found here are fingerspelled letter-by-letter (SPELL: path).
-  // MVP GLOSS_MAP — 7 signs (4 GLB + 3 MP4)
-  // Demo sentence: "Hello! I think you are good. Please help. Do you understand? Thank you. Goodbye."
-  // Unknown words fall through to fingerspelling automatically.
+  // ─── Demo scenes: each has a caption + ordered sign tokens ─────────────────
+  // Token format: 'gloss_name' → plays that GLB | 'SPELL:word' → fingerspells it
+  // GLB names must match keys loaded in avatarContent-src.js loadAnim() calls
+  const DEMO_SCENES = [
+    {
+      caption: '👋 Hello! Welcome to Echo-Sign.',
+      tokens: ['hello', 'hello'],
+      tokenMs: [2200, 2000],
+    },
+    {
+      caption: '✋ I can sign YES and NO.',
+      tokens: ['yes', 'no'],
+      tokenMs: [1600, 1800],
+    },
+    {
+      caption: '🤔 Thinking... Got a good idea!',
+      tokens: ['think', 'good'],
+      tokenMs: [2000, 1600],
+    },
+    {
+      caption: '👏 Great job — let\'s clap for that!',
+      tokens: ['clap', 'clap', 'victory'],
+      tokenMs: [2000, 2000, 2800],
+    },
+    {
+      caption: '😮 Wow, that\'s surprising!',
+      tokens: ['surprised', 'acknowledge'],
+      tokenMs: [2200, 1800],
+    },
+    {
+      caption: '💬 Let me explain the topic.',
+      tokens: ['sitting_talking', 'point', 'think'],
+      tokenMs: [2500, 1600, 2000],
+    },
+    {
+      caption: '🎓 Study hard and learn every day.',
+      tokens: ['think', 'acknowledge', 'think', 'good'],
+      tokenMs: [2000, 1800, 2000, 1600],
+    },
+    {
+      caption: '🔤 Fingerspelling: E-C-H-O',
+      tokens: ['SPELL:echo'],
+      tokenMs: [3500],
+    },
+    {
+      caption: '🔤 Name sign: S-I-G-N',
+      tokens: ['SPELL:sign'],
+      tokenMs: [3200],
+    },
+    {
+      caption: '😄 Don\'t give up — keep going!',
+      tokens: ['no', 'dismissing_gesture', 'yes', 'good'],
+      tokenMs: [1600, 2200, 1600, 1600],
+    },
+    {
+      caption: '🙏 Thankful for your attention!',
+      tokens: ['thankful', 'point', 'acknowledge'],
+      tokenMs: [2200, 1600, 1800],
+    },
+    {
+      caption: '💃 Echo-Sign — making communication fun!',
+      tokens: ['samba_dancing', 'victory', 'clap'],
+      tokenMs: [4500, 2800, 2200],
+    },
+    {
+      caption: '👋 Goodbye — see you next time!',
+      tokens: ['hello', 'acknowledge', 'hello'],
+      tokenMs: [2200, 1800, 2200],
+    },
+  ];
+
+  function stopDemo() {
+    if (demoTimer) { clearTimeout(demoTimer); demoTimer = null; }
+    const iframe = document.getElementById('echo-sign-iframe');
+    if (iframe?.contentWindow) {
+      iframe.contentWindow.postMessage({ type: 'echo-sign:stop' }, '*');
+    }
+  }
+
+  let demoActive = false;
+  let demoSceneIdx = 0;
+  let demoTokenIdx = 0;
+
+  function runDemo() {
+    createOverlay();
+    if (overlayEl) overlayEl.style.display = '';
+    demoActive = true;
+    demoSceneIdx = 0;
+    demoTokenIdx = 0;
+    chrome.runtime.sendMessage({ type: 'STATUS_UPDATE', state: 'signing' }).catch(() => {});
+    playNextDemoToken();
+  }
+
+  function playNextDemoToken() {
+    if (!demoActive) return;
+
+    if (demoSceneIdx >= DEMO_SCENES.length) {
+      demoActive = false;
+      setCaption('✅ Demo complete!');
+      setGloss(null);
+      chrome.runtime.sendMessage({ type: 'STATUS_UPDATE', state: 'idle' }).catch(() => {});
+      return;
+    }
+
+    const scene = DEMO_SCENES[demoSceneIdx];
+    const iframe = document.getElementById('echo-sign-iframe');
+
+    if (demoTokenIdx === 0) {
+      setCaption(scene.caption);
+      chrome.runtime.sendMessage({ type: 'TRANSCRIPT_UPDATE', text: scene.caption }).catch(() => {});
+    }
+
+    if (demoTokenIdx >= scene.tokens.length) {
+      demoTokenIdx = 0;
+      demoSceneIdx++;
+      // Scene break
+      demoTimer = setTimeout(playNextDemoToken, 1000);
+      return;
+    }
+
+    const token = scene.tokens[demoTokenIdx];
+    if (token.startsWith('SPELL:')) {
+      const word = token.slice(6);
+      const letters = word.split('');
+      const letterGap = Math.round(500 / currentSpeed);
+      setGloss('spell: ' + word);
+      chrome.runtime.sendMessage({ type: 'WORD_DETECTED', gloss: 'spell:' + word }).catch(() => {});
+      
+      let lettersFinished = 0;
+      const letterListener = (e) => {
+        if (e.data?.type === 'echo-sign:letter-finished') {
+          lettersFinished++;
+          if (lettersFinished >= letters.length) {
+            window.removeEventListener('message', letterListener);
+            demoTokenIdx++;
+            playNextDemoToken();
+          }
+        }
+      };
+      window.addEventListener('message', letterListener);
+
+      letters.forEach((letter, i) => {
+        setTimeout(() => {
+          if (iframe?.contentWindow)
+            iframe.contentWindow.postMessage({ type: 'echo-sign:letter', letter }, '*');
+        }, i * letterGap);
+      });
+    } else {
+      setGloss(token);
+      chrome.runtime.sendMessage({ type: 'WORD_DETECTED', gloss: token }).catch(() => {});
+
+      const glossListener = (e) => {
+        if (e.data?.type === 'echo-sign:gloss-finished' && e.data.gloss === token) {
+          window.removeEventListener('message', glossListener);
+          demoTokenIdx++;
+          playNextDemoToken();
+        }
+      };
+      window.addEventListener('message', glossListener);
+
+      if (iframe?.contentWindow) {
+        iframe.contentWindow.postMessage({
+          type: 'echo-sign:play',
+          gloss: token,
+          speed: currentSpeed,
+          demo: true
+        }, '*');
+      }
+    }
+  }
+
+  // ─── Gloss map ───────────────────────────────────────────────────────────────
+  // String value  → plays that GLB (must match loadAnim key in avatarContent-src.js)
+  // Array value   → plays each GLB in sequence
+  // UPPERCASE key → no GLB exists → tryPlayVideo() called → falls back to 600ms skip
+  // Unknown word  → fingerspelled letter-by-letter
   const GLOSS_MAP = {
+    // ── Single GLB animations ──
+    "hello": "hello", "hi": "hello", "hey": "hello",
+    "clap": "clap", "applause": "clap",
+    "point": "point", "there": "point", "look": "point",
+    "yes": "yes", "yeah": "yes", "yep": "yes",
+    "no": "no", "nah": "no", "nope": "no",
+    "good": "good", "nice": "good",
+    "acknowledge": "acknowledge", "ok": "acknowledge", "okay": "acknowledge",
+    "think": "think", "hmm": "think",
+    // ── Extra GLBs (expressive — these share Kaya's Mixamo skeleton) ──
+    "angry": "angry", "mad": "angry", "furious": "angry",
+    "surprise": "surprised", "shocked": "surprised", "wow": "surprised",
+    "victory": "victory", "win": "victory", "yay": "victory", "celebrate": "victory",
+    "laugh": "sitting_laughing", "funny": "sitting_laughing", "haha": "sitting_laughing", "lol": "sitting_laughing",
+    "talk": "sitting_talking", "talking": "sitting_talking", "chat": "sitting_talking",
+    "doubt": "thoughtful_head_shake",
+    "dismiss": "dismissing_gesture", "ignore": "dismissing_gesture",
+    "deaf": "point", "people": "point",
 
-    // ══ HELLO (GLB) ══
-    "hello": "HELLO", "hi": "HELLO", "hey": "HELLO",
-    "greet": "HELLO", "greetings": "HELLO", "howdy": "HELLO", "welcome": "HELLO",
+    // ── ISL video clips (no GLB — plays assets/videos/*.mp4) ──
+    "help": "HELP", "support": "HELP", "assist": "HELP", "rescue": "HELP",
+    "thanks": "THANK-YOU", "thank": "THANK-YOU", "grateful": "THANK-YOU", "appreciate": "THANK-YOU",
+    "bye": "GOODBYE", "goodbye": "GOODBYE", "farewell": "GOODBYE",
 
-    // ══ THINK (GLB) ══
-    "think": "THINK", "wonder": "THINK", "consider": "THINK",
-    "maybe": "THINK", "idea": "THINK", "believe": "THINK", "opinion": "THINK",
+    // ── Multi-animation sequences (arrays play each GLB in order) ──
+    "agree": ["yes", "acknowledge"],
+    "disagree": ["no", "think"],
+    "understand": ["think", "acknowledge"],
+    "understood": ["think", "acknowledge"],
+    "confused": ["think", "no"],
+    "idea": ["think", "point"],
+    "great": ["good", "clap"],
+    "awesome": ["good", "clap"],
+    "excellent": ["good", "clap"],
+    "perfect": ["good", "yes"],
+    "wrong": ["no", "point"],
+    "smart": ["think", "good"],
+    "brilliant": ["think", "good", "clap"],
+    "welcome": ["hello", "acknowledge"],
+    "amazing": ["clap", "good"],
+    "bad": ["no", "good"],
+    "right": ["yes", "point"],
+    "correct": ["yes", "point", "good"],
+    "approve": ["yes", "good", "acknowledge"],
+    "reject": ["no", "acknowledge"],
+    "maybe": ["think", "acknowledge"],
+    "question": ["think", "point"],
+    "answer": ["acknowledge", "point"],
+    "listen": ["acknowledge", "think"],
+    "sure": ["yes", "good"],
+    "problem": ["think", "no"],
+    "solution": ["think", "yes"],
+    "congratulations": ["clap", "clap"],
+    "congrats": ["clap", "clap"],
+    "success": ["good", "clap"],
+    "best": ["good", "yes"],
+    "true": ["yes", "point"],
+    "false": ["no", "point"],
+    "important": ["point", "acknowledge"],
+    "learn": ["think", "good"],
+    "study": ["think", "acknowledge"],
+    "know": ["think", "yes"],
+    "student": ["hello", "acknowledge"],
+    "teacher": ["hello", "clap"],
+    "exam": ["think", "point", "acknowledge"],
+    "book": ["think", "acknowledge"],
+    "read": ["point", "acknowledge"],
+    "write": ["point", "think"],
+    "math": ["think", "yes"],
+    "science": ["think", "yes"],
+    "computer": ["think", "point"],
+    "school": ["acknowledge", "good"],
+    "university": ["acknowledge", "good", "clap"],
+    "homework": ["think", "acknowledge", "point"],
+    "research": ["think", "think"],
+    "project": ["think", "good", "point"],
 
-    // ══ GOOD (GLB) ══
-    "good": "GOOD", "nice": "GOOD", "happy": "GOOD",
-    "well": "GOOD", "fine": "GOOD",
+    // ── Additional vocabulary (verified animations only) ──
+    "begin": "hello", "start": "hello", "intro": "hello", "introduction": "hello", "open": "acknowledge",
+    "thankful": "THANK-YOU",
+    "bravo": ["clap", "victory"], "achievement": ["victory", "clap"],
+    "secret": ["think", "acknowledge"], "whisper": "think", "private": ["think", "no"],
+    "type": ["think", "point"], "typing": ["think", "point"],
+    "walk": "point", "go": ["point", "acknowledge"], "move": "point",
+    "run": ["angry", "point"], "rush": ["angry", "point"], "hurry": ["angry", "point"],
+    "dance": ["clap", "sitting_laughing"], "enjoy": ["good", "clap"], "fun": ["sitting_laughing", "clap"],
+    "wait": ["think", "acknowledge"], "stand": "acknowledge", "ready": ["yes", "good"],
+    "send": ["point", "acknowledge"], "submit": ["yes", "acknowledge"], "share": ["point", "good"],
+    "fall": ["no", "dismissing_gesture"], "mistake": ["no", "think"], "error": ["no", "think"],
+    "challenge": ["angry", "think"], "compete": ["good", "think"],
 
-    // ══ UNDERSTAND (GLB) ══
-    "understand": "UNDERSTAND", "understood": "UNDERSTAND",
-    "got": "UNDERSTAND", "alright": "UNDERSTAND", "noted": "UNDERSTAND",
+    // ── Lecture / classroom ──
+    "lecture":    ["sitting_talking", "point"],
+    "explain":    ["point", "sitting_talking"],
+    "discuss":    ["sitting_talking", "acknowledge"],
+    "present":    ["hello", "point"],
+    "lesson":     ["think", "acknowledge"],
+    "topic":      ["point", "think"],
+    "example":    ["point", "acknowledge"],
+    "concept":    ["think", "point"],
+    "theory":     ["think", "think"],
+    "definition": ["think", "point"],
+    "meaning":    ["think", "acknowledge"],
+    "note":       ["think", "acknowledge"],
+    "notes":      ["think", "acknowledge"],
+    "focus":      ["think", "point"],
+    "attention":  ["point", "think"],
+    "sentence":   ["point", "think", "acknowledge"],
 
-    // ══ HELP (MP4 — assets/videos/help.mp4) ══
-    "help": "HELP", "support": "HELP", "assist": "HELP",
-    "fix": "HELP", "rescue": "HELP",
+    // ── Academic actions ──
+    "practice":   ["think", "good"],
+    "complete":   ["yes", "good"],
+    "finish":     ["yes", "acknowledge"],
+    "continue":   ["yes", "point"],
+    "remember":   ["think", "yes"],
+    "forget":     ["no", "think"],
+    "improve":    ["think", "good"],
+    "pass":       ["yes", "good", "clap"],
+    "fail":       ["no", "dismissing_gesture"],
+    "grade":      ["good", "acknowledge"],
+    "score":      ["good", "point"],
+    "college":    ["acknowledge", "good", "clap"],
+    "class":      ["acknowledge", "good"],
+    "course":     ["acknowledge", "good"],
+    "module":     ["think", "acknowledge"],
+    "assignment": ["think", "acknowledge", "point"],
+    "quiz":       ["think", "point"],
+    "test":       ["think", "point"],
+    "attend":     ["hello", "acknowledge"],
+    "ask":        ["think", "point"],
 
-    // ══ THANK-YOU (MP4 — assets/videos/thank_you.mp4) ══
-    "thanks": "THANK-YOU", "thank": "THANK-YOU", "grateful": "THANK-YOU",
-    "appreciate": "THANK-YOU", "thankyou": "THANK-YOU",
-
-    // ══ GOODBYE (MP4 — assets/videos/goodbye.mp4) ══
-    "bye": "GOODBYE", "goodbye": "GOODBYE", "farewell": "GOODBYE", "later": "GOODBYE",
-
-    // ══ POINT (GLB — for demo: "deaf people") ══
-    "deaf": "POINT", "people": "POINT",
+    // ── Communication & broader education ──
+    "communicate": ["sitting_talking", "acknowledge"],
+    "language":   ["sitting_talking", "point"],
+    "education":  ["think", "good", "clap"],
+    "knowledge":  ["think", "yes"],
+    "skill":      ["good", "acknowledge"],
+    "ability":    ["good", "yes"],
+    "report":     ["sitting_talking", "point"],
+    "group":      ["hello", "acknowledge"],
+    "team":       ["hello", "clap"],
+    "work":       ["think", "good"],
   };
-
-  // Deduplicate: if a word maps to a gloss that has a duplicate key, last one wins (JS default)
 
   function wordToGloss(word) {
     const clean = word.toLowerCase().replace(/[^a-z0-9]/g, '');
     if (GLOSS_MAP[clean]) return GLOSS_MAP[clean];
-    // Unknown word → fingerspell it (min 3 chars to skip noise)
-    if (clean.length >= 3) return 'SPELL:' + clean;
+    // Unknown word → fingerspell it (min 6 chars skips filler: are/the/and/that/with)
+    if (clean.length >= 6) return 'SPELL:' + clean;
     return null;
   }
 
@@ -60,16 +341,21 @@
   function dispatchGloss(gloss) {
     const iframe = document.getElementById('echo-sign-iframe');
     if (!iframe?.contentWindow) return;
+    if (Array.isArray(gloss)) {
+      gloss.forEach(g => iframe.contentWindow.postMessage({ type: 'echo-sign:play', gloss: g, speed: currentSpeed }, '*'));
+      setGloss(gloss.join('+'));
+      return;
+    }
     if (gloss.startsWith('SPELL:')) {
       const letters = gloss.slice(6).split('');
       letters.forEach((letter, i) => {
         setTimeout(() => {
           iframe.contentWindow.postMessage({ type: 'echo-sign:letter', letter }, '*');
-        }, i * 450); // stagger each letter by 450ms
+        }, i * Math.round(450 / currentSpeed)); // stagger adjusted by speed
       });
       setGloss('spell: ' + gloss.slice(6));
     } else {
-      iframe.contentWindow.postMessage({ type: 'echo-sign:play', gloss }, '*');
+      iframe.contentWindow.postMessage({ type: 'echo-sign:play', gloss, speed: currentSpeed }, '*');
       setGloss(gloss);
     }
   }
@@ -77,7 +363,19 @@
   // ─── Speech recognition (runs here so it inherits page mic access) ──────────
   let recognition = null;
   let isListening = false;
-  let lastInterimGloss = null; // prevents the same sign firing repeatedly on interim updates
+  const signedThisPhrase = new Set(); // all glosses dispatched in current phrase
+  const recentSigns = new Map();      // gloss → timestamp for cross-session cooldown
+
+  function canDispatch(key) {
+    const now = Date.now();
+    const last = recentSigns.get(key);
+    const cooldown = key.startsWith('SPELL:')
+      ? key.slice(6).length * Math.ceil(450 / currentSpeed) + 500  // full spell duration + 500ms buffer
+      : 1500;
+    if (last && now - last < cooldown) return false;
+    recentSigns.set(key, now);
+    return true;
+  }
 
   function startListening(lang) {
     if (isListening) return;
@@ -119,7 +417,6 @@
       }
 
       if (finalText) {
-        lastInterimGloss = null; // reset dedup on finalized phrase
         chrome.runtime.sendMessage({ type: 'TRANSCRIPT_UPDATE', text: finalText.trim() }).catch(() => {});
         finalText.toLowerCase()
           .replace(/[^a-z0-9\s]/g, '')
@@ -127,24 +424,30 @@
           .filter(w => w.length > 1)
           .forEach(word => {
             const gloss = wordToGloss(word);
-            if (gloss) {
+            const key = Array.isArray(gloss) ? gloss.join('+') : gloss;
+            if (gloss && !signedThisPhrase.has(key) && canDispatch(key)) {
               dispatchGloss(gloss);
               chrome.runtime.sendMessage({ type: 'WORD_DETECTED', gloss }).catch(() => {});
             }
           });
+        signedThisPhrase.clear(); // reset for next phrase
+
       } else if (interimText) {
         chrome.runtime.sendMessage({ type: 'TRANSCRIPT_UPDATE', text: interimText.trim() }).catch(() => {});
-        // Also trigger signs from interim — fires when recognition never finalises (e.g. background audio)
-        const words = interimText.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 1);
-        const lastWord = words[words.length - 1];
-        if (lastWord) {
-          const gloss = wordToGloss(lastWord);
-          if (gloss && gloss !== lastInterimGloss) {
-            lastInterimGloss = gloss;
-            dispatchGloss(gloss);
-            chrome.runtime.sendMessage({ type: 'WORD_DETECTED', gloss }).catch(() => {});
-          }
-        }
+        // Process ALL words (not just last) so middle words aren't missed
+        interimText.toLowerCase()
+          .replace(/[^a-z0-9\s]/g, '')
+          .split(/\s+/)
+          .filter(w => w.length > 1)
+          .forEach(word => {
+            const gloss = wordToGloss(word);
+            const key = Array.isArray(gloss) ? gloss.join('+') : gloss;
+            if (gloss && !signedThisPhrase.has(key) && canDispatch(key)) {
+              signedThisPhrase.add(key);
+              dispatchGloss(gloss);
+              chrome.runtime.sendMessage({ type: 'WORD_DETECTED', gloss }).catch(() => {});
+            }
+          });
       }
     };
 
@@ -168,7 +471,7 @@
     overlayEl.id = 'echo-sign-overlay';
     overlayEl.innerHTML = `
       <div id="echo-sign-header">
-        <span>🤟 Echo-Sign ASL</span>
+        <span>🤟 Echo-Sign Gestures</span>
         <div id="echo-sign-controls">
           <span id="echo-sign-status" class="status-dot idle"></span>
           <button id="echo-sign-minimize">—</button>
@@ -432,6 +735,34 @@
 
       case 'TRANSCRIPT_UPDATE':
         setCaption(message.text);
+        break;
+
+      case 'SET_SPEED': {
+        currentSpeed = message.speed;
+        const iframeEl = document.getElementById('echo-sign-iframe');
+        if (iframeEl?.contentWindow) {
+          iframeEl.contentWindow.postMessage({ type: 'echo-sign:speed', factor: currentSpeed }, '*');
+        }
+        break;
+      }
+
+      case 'SET_AVATAR': {
+        const avIframe = document.getElementById('echo-sign-iframe');
+        if (avIframe?.contentWindow) {
+          avIframe.contentWindow.postMessage({ type: 'echo-sign:avatar', avatar: message.avatar }, '*');
+        }
+        break;
+      }
+
+      case 'START_DEMO':
+        stopDemo();
+        runDemo();
+        break;
+
+      case 'STOP_DEMO':
+        stopDemo();
+        demoActive = false;
+        chrome.runtime.sendMessage({ type: 'STATUS_UPDATE', state: 'idle' }).catch(() => {});
         break;
 
       case 'STOP':

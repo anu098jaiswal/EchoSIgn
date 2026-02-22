@@ -59,7 +59,6 @@ User opens NPTEL lecture
 ### 1. Kaya Avatar (humanoid 3D model)
 **Status:** Currently loads `hello.glb` (an animation file) as the avatar base — wrong.
 **Need:** A rigged humanoid `.glb` character (Ready Player Me / Mixamo / custom Kaya model).
-\
 **Files:** `src/avatarContent.js` lines 127–151
 **Fix:** Replace `ANIM_BASE + 'hello.glb'` with a proper `avatar.glb` character file.
 **Action:** Export/download Kaya or any rigged humanoid from Ready Player Me → save as `assets/avatar.glb`.

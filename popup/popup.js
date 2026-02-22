@@ -10,6 +10,7 @@ const recentGlosses = [];  // last 8 glosses shown in UI
 const toggleBtn    = document.getElementById('toggle-btn');
 const btnText      = document.getElementById('btn-text');
 const btnIcon      = document.getElementById('btn-icon');
+const demoBtn      = document.getElementById('demo-btn');
 const clearBtn     = document.getElementById('clear-btn');
 const transcriptEl = document.getElementById('transcript-box');
 const glossQueueEl = document.getElementById('gloss-queue');
@@ -20,11 +21,17 @@ const langSelect   = document.getElementById('lang-select');
 const sourceSelect = document.getElementById('source-select');
 const apiKeyInput  = document.getElementById('api-key-input');
 const apiKeyRow    = document.getElementById('api-key-row');
+const speedSelect  = document.getElementById('speed-select');
+const avatarSelect = document.getElementById('avatar-select');
 
 // ─── Start / Stop ────────────────────────────────────────────────────────────
 toggleBtn.addEventListener('click', () => {
   if (!isRunning) startEchoSign();
   else stopEchoSign();
+});
+
+demoBtn.addEventListener('click', () => {
+  sendToBackground({ type: 'START_DEMO' });
 });
 
 clearBtn.addEventListener('click', () => {
@@ -172,10 +179,22 @@ apiKeyInput.addEventListener('change', () => {
   chrome.storage.local.set({ echoSignApiKey: apiKeyInput.value.trim() });
 });
 
+speedSelect.addEventListener('change', () => {
+  sendToBackground({ type: 'SET_SPEED', speed: parseFloat(speedSelect.value) });
+  chrome.storage.local.set({ echoSignSpeed: speedSelect.value });
+});
+
+avatarSelect.addEventListener('change', () => {
+  sendToBackground({ type: 'SET_AVATAR', avatar: avatarSelect.value });
+  chrome.storage.local.set({ echoSignAvatar: avatarSelect.value });
+});
+
 // ─── On load ──────────────────────────────────────────────────────────────────
-chrome.storage.local.get(['echoSignSource', 'echoSignApiKey'], (data) => {
-  if (data.echoSignSource) sourceSelect.value = data.echoSignSource;
-  if (data.echoSignApiKey) apiKeyInput.value  = data.echoSignApiKey;
+chrome.storage.local.get(['echoSignSource', 'echoSignApiKey', 'echoSignSpeed', 'echoSignAvatar'], (data) => {
+  if (data.echoSignSource) sourceSelect.value  = data.echoSignSource;
+  if (data.echoSignApiKey) apiKeyInput.value   = data.echoSignApiKey;
+  if (data.echoSignSpeed)  speedSelect.value   = data.echoSignSpeed;
+  if (data.echoSignAvatar) avatarSelect.value  = data.echoSignAvatar;
   toggleApiKeyRow();
 });
 setUI('idle');

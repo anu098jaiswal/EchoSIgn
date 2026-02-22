@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Echo-Sign: Real-Time ASL Mirror",
+  "name": "Echo-Sign: Real-Time Gesture Mirror",
   "version": "1.1.0",
-  "description": "Real-time American Sign Language interpreter — live speech-to-sign avatar for deaf and hard-of-hearing students.",
+  "description": "Real-time sign interpreter — live speech-to-gesture avatar for deaf and hard-of-hearing students.",
   "permissions": [
     "activeTab",
     "scripting",

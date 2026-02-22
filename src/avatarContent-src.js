@@ -66,25 +66,38 @@ waitForCanvas((canvas) => {
 
   /* ── State ── */
   let mixer   = null;
-  const actions = {};
+  const clips   = {};   // glossName → raw AnimationClip (survives avatar switch)
+  const actions = {};   // glossName → AnimationAction (rebound on each switch)
   const queue   = [];
   let playing   = false;
   const clock   = new THREE.Clock();
   let idleTime  = 0;
+  let speedFactor   = 1.0;
+  let currentAvatarEl = null;
 
   /* ── Load one animation clip ── */
   function loadAnim(glossName, url) {
     const loader = new GLTFLoader();
     loader.load(url, (gltf) => {
       if (!mixer || !gltf.animations.length) return;
-      // Bind the clip to the scene root so bone names resolve against Kaya's skeleton
       const clip = gltf.animations[0];
+      clips[glossName] = clip;                          // cache raw clip
       const action = mixer.clipAction(clip, mixer.getRoot());
       action.loop = THREE.LoopOnce;
       action.clampWhenFinished = true;
       actions[glossName] = action;
       console.log('[Echo-Sign] Animation loaded:', glossName);
     }, undefined, (err) => console.error('[Echo-Sign] Anim error:', glossName, err));
+  }
+
+  /* ── Rebind all cached clips to a new mixer (used on avatar switch) ── */
+  function rebindClips(newMixer) {
+    Object.keys(clips).forEach(name => {
+      const action = newMixer.clipAction(clips[name], newMixer.getRoot());
+      action.loop = THREE.LoopOnce;
+      action.clampWhenFinished = true;
+      actions[name] = action;
+    });
   }
 
   /* ── Load avatar GLB ── */
@@ -102,46 +115,76 @@ waitForCanvas((canvas) => {
 
   function tryPlayVideo(gloss, onDone) {
     if (!videoEl) { onDone(); return; }
-    videoEl.oncanplay = null;
-    videoEl.onended   = null;
-    videoEl.onerror   = null;
-    videoEl.src = VIDEO_BASE + gloss.toLowerCase().replace(/-/g, '_') + '.mp4';
-    videoEl.load();
+    // Set handlers BEFORE src/load so no events are missed
     videoEl.oncanplay = () => {
       canvas.style.display = 'none';
       videoEl.style.display = 'block';
-      videoEl.play();
+      videoEl.playbackRate = speedFactor;
+      videoEl.play().catch(() => { showCanvas(); onDone(); });
     };
     videoEl.onended = () => { showCanvas(); onDone(); };
     videoEl.onerror = () => {
       console.log('[Echo-Sign] No video for:', gloss, '— skipping');
+      showCanvas();
       onDone();
     };
+    videoEl.src = VIDEO_BASE + gloss.toLowerCase().replace(/-/g, '_') + '.mp4';
+    videoEl.load();
   }
 
-  loader.load(
-    ANIM_BASE + 'hello.glb',
-    (gltf) => {
+  /* ── Load / switch avatar ── */
+  function loadAvatar(filename) {
+    loader.load(ANIM_BASE + filename + '.glb', (gltf) => {
+      if (currentAvatarEl) scene.remove(currentAvatarEl);
       scene.remove(placeholder);
       scene.add(gltf.scene);
+      currentAvatarEl = gltf.scene;
       mixer = new THREE.AnimationMixer(gltf.scene);
 
-      // ── MVP GLBs (8 existing files) ──
-      // NEED, HELP, THANK-YOU, GOODBYE → served via ISL video clips in assets/videos/
-      loadAnim('HELLO',      ANIM_BASE + 'hello.glb');
-      loadAnim('YES',        ANIM_BASE + 'yes.glb');
-      loadAnim('NO',         ANIM_BASE + 'no.glb');
-      loadAnim('GOOD',       ANIM_BASE + 'good.glb');
-      loadAnim('THINK',      ANIM_BASE + 'think.glb');
-      loadAnim('POINT',      ANIM_BASE + 'point.glb');
-      loadAnim('CLAP',       ANIM_BASE + 'clap.glb');
-      loadAnim('UNDERSTAND', ANIM_BASE + 'acknowledge.glb');
-
-      console.log('[Echo-Sign] Kaya avatar loaded!');
+      if (Object.keys(clips).length === 0) {
+        // First load: fetch all animation GLBs
+        // HELP, THANK-YOU, GOODBYE → no loadAnim → tryPlayVideo() handles them
+        loadAnim('hello',                ANIM_BASE + 'hello.glb');
+        loadAnim('yes',                  ANIM_BASE + 'yes.glb');
+        loadAnim('no',                   ANIM_BASE + 'no.glb');
+        loadAnim('good',                 ANIM_BASE + 'good.glb');
+        loadAnim('think',                ANIM_BASE + 'think.glb');
+        loadAnim('point',                ANIM_BASE + 'point.glb');
+        loadAnim('clap',                 ANIM_BASE + 'clap.glb');
+        loadAnim('acknowledge',          ANIM_BASE + 'acknowledge.glb');
+        loadAnim('angry',                ANIM_BASE + 'angry.glb');
+        loadAnim('dismissing_gesture',   ANIM_BASE + 'dismissing_gesture.glb');
+        loadAnim('falling',              ANIM_BASE + 'falling.glb');
+        loadAnim('female_standing_pose', ANIM_BASE + 'female_standing_pose.glb');
+        loadAnim('offensive_idle',       ANIM_BASE + 'offensive_idle.glb');
+        loadAnim('opening',              ANIM_BASE + 'opening.glb');
+        loadAnim('running',              ANIM_BASE + 'running.glb');
+        loadAnim('samba_dancing',        ANIM_BASE + 'samba_dancing.glb');
+        loadAnim('sitting_laughing',     ANIM_BASE + 'sitting_laughing.glb');
+        loadAnim('sitting_talking',      ANIM_BASE + 'sitting_talking.glb');
+        loadAnim('spin_in_place',        ANIM_BASE + 'spin_in_place.glb');
+        loadAnim('standard_walk',        ANIM_BASE + 'standard_walk.glb');
+        loadAnim('standing_clap',        ANIM_BASE + 'standing_clap.glb');
+        loadAnim('surprised',            ANIM_BASE + 'surprised.glb');
+        loadAnim('taunt',                ANIM_BASE + 'taunt.glb');
+        loadAnim('telling_a_secret',     ANIM_BASE + 'telling_a_secret.glb');
+        loadAnim('texting_while_standing', ANIM_BASE + 'texting_while_standing.glb');
+        loadAnim('thankful',             ANIM_BASE + 'thankful.glb');
+        loadAnim('thoughtful_head_shake',ANIM_BASE + 'thoughtful_head_shake.glb');
+        loadAnim('using_a_fax_machine',  ANIM_BASE + 'using_a_fax_machine.glb');
+        loadAnim('victory',              ANIM_BASE + 'victory.glb');
+      } else {
+        // Avatar switch: rebind cached clips to new mesh (no re-download)
+        rebindClips(mixer);
+      }
+      console.log('[Echo-Sign] Avatar loaded:', filename);
     },
-    (xhr) => console.log(`[Echo-Sign] Avatar: ${(xhr.loaded / xhr.total * 100).toFixed(0)}%`),
-    (err) => console.error('[Echo-Sign] Avatar load failed, placeholder stays.', err)
-  );
+    undefined,
+    (err) => console.error('[Echo-Sign] Avatar load failed:', err));
+  }
+
+  // Initial load (Kaya — hello.glb contains both the mesh and the hello animation)
+  loadAvatar('hello');
 
   /* ── Playback queue ── */
   function playNext() {
@@ -149,14 +192,22 @@ waitForCanvas((canvas) => {
     playing = true;
     const gloss = queue.shift();
 
+    const onFinished = () => {
+      window.parent.postMessage({ type: 'echo-sign:gloss-finished', gloss }, '*');
+      setTimeout(playNext, 300);
+    };
+
     if (actions[gloss]) {
       Object.values(actions).forEach(a => a.stop());
       const action = actions[gloss];
-      action.reset().play();
-      setTimeout(playNext, action.getClip().duration * 1000 + 300);
+      action.reset();
+      action.timeScale = speedFactor;
+      action.play();
+      const dur = action.getClip().duration / speedFactor;
+      setTimeout(onFinished, dur * 1000);
     } else {
       // No GLB — try ISL video clip, then skip if none found
-      tryPlayVideo(gloss, () => setTimeout(playNext, 600));
+      tryPlayVideo(gloss, onFinished);
     }
   }
 
@@ -185,11 +236,16 @@ waitForCanvas((canvas) => {
       letterCtx.stroke();
     };
 
+    const cleanup = () => {
+      if (letterCtx) letterCtx.clearRect(0, 0, W, H);
+      window.parent.postMessage({ type: 'echo-sign:letter-finished', letter }, '*');
+    };
+
     const img = new Image();
     img.onload = () => {
       drawBubble();
       letterCtx.drawImage(img, bx, by, size, size);
-      setTimeout(() => letterCtx && letterCtx.clearRect(0, 0, W, H), 700);
+      setTimeout(cleanup, 700);
     };
     img.onerror = () => {
       // Fallback: text bubble when handshape PNG not found
@@ -199,7 +255,7 @@ waitForCanvas((canvas) => {
       letterCtx.textAlign = 'center';
       letterCtx.textBaseline = 'middle';
       letterCtx.fillText(letter.toUpperCase(), bx + size / 2, by + size / 2);
-      setTimeout(() => letterCtx && letterCtx.clearRect(0, 0, W, H), 700);
+      setTimeout(cleanup, 700);
     };
     img.src = ALPHA_BASE + letter.toLowerCase() + '.png';
   }
@@ -207,10 +263,34 @@ waitForCanvas((canvas) => {
   /* ── Listen for gloss + letter messages from content.js ── */
   window.addEventListener('message', (e) => {
     if (e.data?.type === 'echo-sign:play') {
+      if (e.data.speed !== undefined) speedFactor = e.data.speed;
+      // Only clear backlog for live speech, NOT for demo tokens
+      if (!e.data.demo && queue.length > 1) queue.length = 0;
       queue.push(e.data.gloss);
       if (!playing) playNext();
+
+    } else if (e.data?.type === 'echo-sign:demo-batch') {
+      // Demo sends a full scene's tokens at once
+      if (e.data.speed !== undefined) speedFactor = e.data.speed;
+      if (Array.isArray(e.data.glosses)) {
+        e.data.glosses.forEach(g => queue.push(g));
+      }
+      if (!playing) playNext();
+
+    } else if (e.data?.type === 'echo-sign:stop') {
+      queue.length = 0;
+      playing = false;
+      Object.values(actions).forEach(a => a.stop());
+      showCanvas();
+
     } else if (e.data?.type === 'echo-sign:letter') {
       showLetter(e.data.letter);
+    } else if (e.data?.type === 'echo-sign:speed') {
+      speedFactor = e.data.factor;
+    } else if (e.data?.type === 'echo-sign:avatar') {
+      queue.length = 0;   // clear pending signs
+      playing = false;
+      loadAvatar(e.data.avatar);
     }
   });
 
