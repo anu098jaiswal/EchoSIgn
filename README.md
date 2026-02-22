@@ -7,7 +7,8 @@
 ## 📺 Demo Video DRIVE LINK
 
 
-![Echo-Sign Preview](assets/image.png)
+![Echo-Sign Preview](assets/clarra.png)
+![Echo-Sign Preview](assets/kaya.png)
 
 https://drive.google.com/file/d/12yBv0TOKdDxfsf1MJxKD4Vobe9mehhW5/view?usp=sharing
 
