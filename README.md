@@ -6,9 +6,13 @@
 
 ## 📺 Demo Video DRIVE LINK
 
-<img src="assets/clarra_avatar.png" width="300"/>
-<img src="assets/clarra.png" width="300"/>
-<img src="assets/kaya.png" width="300"/>
+<table>
+  <tr>
+    <td><img src="assets/clarra_avatar.png" width="280"/></td>
+    <td><img src="assets/clarra.png" width="280"/></td>
+    <td><img src="assets/kaya.png" width="280"/></td>
+  </tr>
+</table>
 
 https://drive.google.com/file/d/12yBv0TOKdDxfsf1MJxKD4Vobe9mehhW5/view?usp=sharing
 
