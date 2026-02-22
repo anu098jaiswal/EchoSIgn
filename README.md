@@ -85,4 +85,4 @@ graph LR
 5.  Pin Echo-Sign and start interpreting!
 
 ---
-*Built for the jury review — Focused on Scalability and Accessibility.* 🤟
+
