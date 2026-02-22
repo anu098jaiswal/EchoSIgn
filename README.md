@@ -1,6 +1,6 @@
 # 🤟 Echo-Sign: Real-Time Sign Gesture Mirror
 
-**Empowering Accessibility in Digital Education through 3D Avatar Interpretation.**
+**Bridging the Communication Gap for the Deaf and Hard-of-Hearing Community through Real-Time 3D Interpretation.**
 
 ---
 
