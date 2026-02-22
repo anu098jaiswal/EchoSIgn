@@ -4,10 +4,14 @@
 
 ---
 
-## 📺 Demo Video
-[![Echo-Sign Demo](image.png)](https://drive.google.com/file/d/12yBv0TOKdDxfsf1MJxKD4Vobe9mehhW5/view?usp=sharing)
+## 📺 Demo Video DRIVE LINK
 
-[Click here to watch the full Demo Video on Google Drive](https://drive.google.com/file/d/12yBv0TOKdDxfsf1MJxKD4Vobe9mehhW5/view?usp=sharing)
+
+![Echo-Sign Preview](assets/image.png)
+
+https://drive.google.com/file/d/12yBv0TOKdDxfsf1MJxKD4Vobe9mehhW5/view?usp=sharing
+
+
 
 ---
 
